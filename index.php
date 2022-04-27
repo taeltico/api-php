@@ -1,4 +1,5 @@
 <?php
+
 include_once "./config/config.php";
 include_once "./config/jwt.php";
 
@@ -11,35 +12,50 @@ require_once "./app/controller/usuarioController.php";
 try {
     //Variavel para os resultados
     $result = null;
-    $url = [];
-    //Cabeçalho comum da aplicação
-    header("Content-Type: application/json; charset=UTF-8");
+    $httpCod = null;
+    $auth = null;
 
-    //Validação de rotas
     $method = isset($_SERVER["REQUEST_METHOD"]) ? $_SERVER["REQUEST_METHOD"] : null;
 
-    // if(isset($_SERVER["REQUEST_METHOD"])){
-    //     $method = $_SERVER["REQUEST_METHOD"];
-    // }else{
-    //     $method = null;
-    // }
+    header("Access-Control-Allow-Origin: *");
+    header("Content-Type: application/json; charset=UTF-8");
 
-    if ($method != null) {
+    if ($method == "OPTIONS") {
+        //Cabeçalho comum da aplicação    
+        header("Access-Control-Allow-Methods: POST, GET, PUT, OPTIONS");
+        header("Access-Control-Allow-Headers: *");
+        header("Access-Control-Max-Age: 3600"); //1hora == 3600 seg;
+        header("Access-Control-Allow-Credentials: true");
+    }
+
+    if ($method != null && $method != "OPTIONS") {
+        //Validação de rotas
         $url = explode("/", $_SERVER["REQUEST_URI"]);
         array_shift($url);
         array_shift($url);
-        $result = authentic($method, $url); //Comentar para gravar sem validar o usuarios
+
+        $auth = authentic($method, $url);
+        //$auth = "userAll";
+
+        //Verifica validação do usuario
+        if ($auth != null && $url[count($url) - 1] == "logon") {
+            $httpCod = 200;
+            $result = $auth;
+        } else if ($auth != null) {
+            $httpCod = 200;
+            $result = route($method, $url);
+        } else {
+            $httpCod = 401;
+            $result = "Usuario sem autorização";
+        }
+
+        //A resposta se não existir errose se existirem dados
+        //header('Content-Type: application/json;charset=utf-8');
+        http_response_code($httpCod);
+        echo json_encode(array("result" => $result));
     } else {
-        throw new Exception();
+        //throw new Exception();
     };
-
-    if ($result == null) {
-        $result = route($method, $url);
-    }
-
-    //A resposta se não existir errose se existirem dados
-    http_response_code(200);
-    echo json_encode(array("result" => $result));
 } catch (Exception $e) {
     http_response_code(404);
     echo json_encode(array("result" => "Pagina não encontrada!"));
@@ -196,23 +212,27 @@ function authentic($method, $url)
                         $dadosUser = json_decode(file_get_contents('php://input')); //tranformar JSON do body em Objetos
                         $userController = new usuarioController;
                         $result = $userController->logon($dadosUser->usuario, $dadosUser->senha);
-                        $token = isset($result["token"]) ? $result["token"] : $token;
+                        $token = isset($result->token) ? $result->token : $token;
                         break;
                     default:
-                        throw new Exception();
+                        //throw new Exception();
+                        $result = null;
                         break;
                 }
                 break;
 
             default:
-                throw new Exception();
+                //throw new Exception();
+                $result = null;
                 break;
         }
     }
-    if ($token == null) throw new Exception();
     $auth = $token != null ? validJWT($token) : null;
-    if ($token == null || $auth == null) throw new Exception();
-    $_SESSION[$token] = json_decode($auth);
+
+    if ($token != null && $auth != null) {
+        $_SESSION[$token] = json_decode($auth);
+        $result = isset($result) ? $result : json_decode($auth);
+    }
 
     return $result;
 }
